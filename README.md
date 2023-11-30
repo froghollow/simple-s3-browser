@@ -22,7 +22,7 @@ The standard Amazon S3 Console is oriented toward viewing and managing all bucke
         - **Rename** one selected object within its current folder 
         - **Delete** selected objects from source (WARNING: permanent, unless S3 versioning is configured)
 
-    ![](./SimpleS3.20231130-081150.png)
+    ![](./SimpleS3.20231130-080859.png)
 
     
 
@@ -38,7 +38,7 @@ The standard Amazon S3 Console is oriented toward viewing and managing all bucke
         - **Confirm** to perform specified operation.
         - **Cancel** to return to 'Select Source Objects' without performing specified operation.
 
-    ![Alt text](SimpleS3.20231130-080859.png))
+    ![Alt text](SimpleS3.20231130-081150.png))
 
 ## Note
 - SIMPLE S3 Browser is intended to support Dev and Test operations involving a limited set of files.  (i.e., dozens, maybe hundreds, not thousands).   If you find the GUI bogging down retreiving big object lists, specify a more limited subfolder in your Bucket Dictionary.  Or, you can script your lotsa files use case with the provided [python/batch_simple_2311.py](./python/batch_simple_2311.py) module.
