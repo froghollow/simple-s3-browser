@@ -102,7 +102,11 @@ class S3_Browser:
             tooltip='Cancel Action and Return to Previous View',
             icon='' # (FontAwesome names without the `fa-` prefix)
         )
-
+        self.selectall_cbx = widgets.Checkbox(
+            value=False,
+            description='Select All/None',
+            disabled=False
+        )
         self.objects_vbox = widgets.VBox(
             self.objects_cbx_list, 
             layout=widgets.Layout(height='300px')
@@ -113,11 +117,11 @@ class S3_Browser:
         )
 
         self.message_textarea = widgets.Textarea (
-            value='Hello World',
-            placeholder='Type something',
+            value='',
+            placeholder="Empty!   'Cancel' and select some objects."  ,
             description='',
             disabled=False, 
-            layout=widgets.Layout(width="100%", height='120px')   
+            layout=widgets.Layout(width="100%", height='250px')   
         )
 
         self.status_text = widgets.Textarea(
@@ -147,23 +151,27 @@ class S3_Browser:
     def generate_layout(self):
 
         self.header_pane = widgets.VBox( [
-            widgets.HTML(value=f"<h1>{self.title}</h1>"),  #({self.rules_text.value.count()})</h2>"),
+            widgets.HTML(value=f"<h2>{self.title}</h2>"),  #({self.rules_text.value.count()})</h2>"),
         ],
-        layout=widgets.Layout(height='auto')  )
+        #layout=widgets.Layout(height='auto')  
+        )
 
         # list S3 objects and action buttons
         self.object_pane = widgets.VBox( [
             widgets.HBox([self.srce_bucket_ddlb]),
             widgets.HBox([self.srce_folder_ddlb]),
-            widgets.HBox([self.filter_text]),
+            widgets.HBox([
+                self.filter_text,
+                self.selectall_cbx,
+            ]),
             widgets.HBox([
                 self.copy_btn,
                 self.move_btn,
                 self.rename_btn,
-                self.delete_btn
+                self.delete_btn,
             ]),
             self.objects_vbox ], 
-            layout=widgets.Layout(height='auto')
+            #layout=widgets.Layout(height='auto')
         )
 
         # show selected objects, confirm/cancel action
@@ -178,7 +186,7 @@ class S3_Browser:
                 self.confirm_btn,
                 self.cancel_btn
             ]) ], 
-            layout=widgets.Layout(height='auto')
+            #layout=widgets.Layout(height='auto')
         )
 
         self.app_layout = widgets.AppLayout(
@@ -186,7 +194,8 @@ class S3_Browser:
             left_sidebar = None,
             center = self.object_pane, # default
             right_sidebar = None,
-            footer = self.status_text
+            footer = self.status_text,
+            pane_heights = ['60px',5,2]
         )
 
         return self.app_layout
@@ -202,6 +211,7 @@ class S3_Browser:
         self.dest_bucket_ddlb.observe(self.on_select_dest_bucket, names='value')
         self.dest_folder_ddlb.observe(self.on_select_dest_folder, names='value')
         self.filter_text.observe(self.on_change_filter_text, names='value')
+        self.selectall_cbx.observe(self.on_change_selectall, names='value')
         self.input_text.observe(self.on_change_input_text, names='value')
         self.copy_btn.on_click(self.on_click_copy_button)
         self.move_btn.on_click(self.on_click_move_button)
@@ -215,7 +225,7 @@ class S3_Browser:
         self.files,self.folders = self._list_s3_objects( self.srce_bucket_ddlb.value )
         self.srce_folder_ddlb.options = self.folders
         self.objects_cbx_list = self._get_objects_cbx_list(self.files)  
-        self._refresh_objects_vbox( self.objects_cbx_list )
+        #self._refresh_objects_vbox( self.objects_cbx_list )
 
     def on_select_srce_folder( self, *args):
         #self.files,self.folders = self._list_s3_objects( self.srce_bucket_ddlb.value )
@@ -248,15 +258,16 @@ class S3_Browser:
         self._show_status("CONFIRM Button Clicked!" )
 
         for srce_objname in self._get_cbx_selected():
-            bucket_name = srce_objname[:srce_objname.find('/')]
-            srce_bucket = self.bucket_dict[bucket_name]
+            #bucket_name = srce_objname[:srce_objname.find('/')]
+            #srce_bucket = self.bucket_dict[bucket_name]
+            srce_bucket = self.bucket_dict[self.srce_bucket_ddlb.value]
 
             srce_s3_client = bat.get_s3_client( 
                 srce_bucket['Profile'], 
                 srce_bucket['Region'], 
                 **srce_bucket
             )
-            if 'DELETE' in app.input_label.value:
+            if 'DELETE' in self.input_label.value:
                 bat.delete_s3_object( srce_objname, srce_s3_client)
                 continue
 
@@ -265,7 +276,7 @@ class S3_Browser:
             fileobj = bat.get_s3_object( srce_objname, srce_s3_client )
 
             # ... and name the destination
-            if 'NEW NAME' in app.input_label.value:
+            if 'NEW NAME' in self.input_label.value:
                 srce_folder  = srce_objname[:srce_objname.rfind('/')+1]
                 dest_objname = srce_folder + self.input_text.value
                 #print (srce_folder, dest_objname)
@@ -273,8 +284,9 @@ class S3_Browser:
                 dest_folder = self.input_text.value
                 dest_objname = dest_folder + srce_objname.split('/')[-1]
 
-            bucket_name = dest_objname[:dest_objname.find('/')]
-            dest_bucket = self.bucket_dict[bucket_name]
+            #bucket_name = dest_objname[:dest_objname.find('/')]
+            #dest_bucket = self.bucket_dict[bucket_name]
+            dest_bucket = self.bucket_dict[self.dest_bucket_ddlb.value]
 
             dest_s3_client = bat.get_s3_client( 
                 dest_bucket['Profile'], 
@@ -284,12 +296,17 @@ class S3_Browser:
             bat.put_s3_object( dest_objname, fileobj, dest_s3_client )
 
             # delete the source object unless it's a copy
-            if not 'COPY' in app.input_label.value:
+            if not 'COPY' in self.input_label.value:
                 bat.delete_s3_object( srce_objname, srce_s3_client )
 
     def on_click_cancel_button( self, *args ):
         self._show_status("CANCEL Button Clicked!" )
         self.app_layout.center = self.object_pane
+
+    def on_change_selectall( self, *args):
+        for cbx in self.objects_vbox.children:
+            cbx.value = self.selectall_cbx.value
+        self._get_cbx_selected()
 
     def on_change_objects( self, *args ):
         #self._show_status("Checkbox Clicked!")
@@ -300,6 +317,7 @@ class S3_Browser:
         self.message_label.value = "Selected Objects:"        
         self.message_textarea.value = "\n".join(self._get_cbx_selected())
         self.input_label.value = "Enter the COPY Destination for Selected Objects:"
+        self._show_input_text( self.dest_folder_ddlb.value )
         self._show_dest_ddlb( True ) 
 
         self.app_layout.center = self.action_pane
@@ -309,6 +327,7 @@ class S3_Browser:
         self.message_label.value = "Selected Objects:"        
         self.message_textarea.value = "\n".join(self._get_cbx_selected())
         self.input_label.value = "Enter the MOVE Destination for Selected Objects:"
+        self._show_input_text( self.dest_folder_ddlb.value )
         self._show_dest_ddlb( True ) 
 
         self.app_layout.center = self.action_pane
@@ -419,7 +438,7 @@ class S3_Browser:
         
         folders = bat.get_namelist_by_S3pattern( 
             s3_bucket = bucket['BucketName'], 
-            pattern = '.', 
+            pattern = pattern, 
             Folder = bucket['Folders'][0],
             S3Client = s3_client )
         
@@ -427,7 +446,7 @@ class S3_Browser:
 
     def _refresh_objects_vbox( self, objects_cbx_list  ):
         self.objects_vbox.children = objects_cbx_list
-        self.objects_vbox.layout.height= f"{(len(objects_cbx_list)+1)*20}px"
+        #self.objects_vbox.layout.height= f"{(len(objects_cbx_list)+1)*20}px"
         for cbx in self.objects_vbox.children:
             cbx.observe(self.on_change_objects)
 
@@ -453,3 +472,4 @@ class S3_Browser:
             self.rename_btn.disabled = True
 
         return cbx_selected
+
