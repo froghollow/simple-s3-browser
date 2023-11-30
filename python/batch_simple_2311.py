@@ -1,471 +1,475 @@
-# Common Function library for DDMAP SIMPLE File Processing
-# aws s3 cp batch_simple.py s3://wc2h-dtl-prd-code/common/batch_simple.py
+import ipywidgets as widgets
+import batch_simple_2311 as bat
 
-import json
-import os
-import boto3
-from datetime import datetime, timedelta
+class S3_Browser:
 
-if 'AWS_DEFAULT_REGION' not in os.environ.keys():
-    os.environ['AWS_DEFAULT_REGION'] = 'us-gov-west-1'
+    def __init__(self, bucket_dict, title="SIMPLE S3 Browser"):
+        self.bucket_dict = bucket_dict
+        #self.files = files
+        self.title = title
 
-### <<< DynDB Batch table functions ...
-from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
-
-if 'DynDbBatchTable' not in os.environ.keys():
-    os.environ['DynDbBatchTable'] = 'dtl-prd-SMPL0-batch'
-
-dynDb_client = boto3.client('dynamodb')
-dynDb_resource = boto3.resource('dynamodb')
-
-def dynamo_obj_to_python_obj(dynamo_obj: dict) -> dict:
-    deserializer = TypeDeserializer()
-    return {
-        k: deserializer.deserialize(v) 
-        for k, v in dynamo_obj.items()
-    }  
-  
-def python_obj_to_dynamo_obj(python_obj: dict) -> dict:
-    serializer = TypeSerializer()
-    return {
-        k: serializer.serialize(v)
-        for k, v in python_obj.items()
-    }
-
-def get_batch( batch_id, object_id='', tablename = os.environ['DynDbBatchTable'] ):
-    if object_id == '':
-        object_id = batch_id
-    
-    resp = dynDb_client.query(
-            ExpressionAttributeValues = { ':b' : { 'S': batch_id }, },
-            KeyConditionExpression = 'BatchId = :b',
-            TableName = tablename
+        self.srce_bucket_ddlb = widgets.Dropdown(
+            options=list(bucket_dict.keys()),
+            description='Source Bucket:',
+            disabled=False,
+            layout={'width': 'auto'},
+            style = {'description_width': 'initial'}
         )
 
-    batch_record = {}
-    batch_items = []
-    for item_dyn in resp['Items']:
-        item_py = dynamo_obj_to_python_obj(item_dyn)
-        if item_py['BatchId'] == item_py['ObjectId']:
-            batch_record = item_py
+        self.files, self.folders = self._list_s3_objects( self.srce_bucket_ddlb.value )
+        self.srce_folder_ddlb = widgets.Dropdown(
+            options=self.folders,
+            description='Source Folder:',
+            disabled=False,
+            layout={'width': 'auto'},
+            style = {'description_width': 'initial'}
+        )
+        self.objects_cbx_list = self._get_objects_cbx_list(self.files)        
+
+        self.dest_bucket_ddlb = widgets.Dropdown(
+            options=list(bucket_dict.keys()),
+            description='Destination Bucket:',
+            disabled=False,
+            layout={'width': 'auto'},
+            style = {'description_width': 'initial'}
+        )
+        #dest_files, self.dest_folders = self._list_s3_objects( self.dest_bucket_ddlb.value )
+        self.dest_folder_ddlb = widgets.Dropdown(
+           options=self.folders, # init same as srce folders
+            description='Destination Folder:',
+            disabled=False,
+            layout={'width': 'auto'},
+            style = {'description_width': 'initial'}
+        )
+        #self.objects_cbx_list = self._get_objects_cbx_list(self.files)        
+
+        
+        # Create Controls
+        self.search_btn = widgets.Button(
+            description='',
+            disabled=True,
+            button_style='', # 'success', 'info', 'warning', 'danger' or ''
+            tooltip='Find Ruleset by Name',
+            icon='search', # (FontAwesome names without the `fa-` prefix),
+            layout={'width': '40px'}
+        )
+        self.filter_text = widgets.Text(
+            value='',
+            placeholder='Type Substring to Filter Objects',
+            description='Source Filter:',
+            disabled=False ,
+            style = dict(font_style = 'italic') # doesn't work 
+        )
+        self.copy_btn = widgets.Button(
+            description='Copy',
+            disabled=True,
+            button_style='', # 'success', 'info', 'warning', 'danger' or ''
+            tooltip='Copy Selected Objects to Specified Folder',
+            icon='clone' # (FontAwesome names without the `fa-` prefix)
+        )
+        self.move_btn = widgets.Button(
+            description='Move',
+            disabled=True,
+            button_style='', # 'success', 'info', 'warning', 'danger' or ''
+            tooltip='Move Selected Objects to Specified Folder',
+            icon='arrow-right' # (FontAwesome names without the `fa-` prefix)
+        )
+        self.rename_btn = widgets.Button(
+            description='Rename',
+            disabled=True,
+            button_style='', # 'success', 'info', 'warning', 'danger' or ''
+            tooltip='Rename Selected Object',
+            icon='edit' # (FontAwesome names without the `fa-` prefix)
+        )
+        self.delete_btn = widgets.Button(
+            description='Delete',
+            disabled=True,
+            button_style='', # 'success', 'info', 'warning', 'danger' or ''
+            tooltip='Delete Selected Objects',
+            icon='remove' # (FontAwesome names without the `fa-` prefix)
+        )
+        self.confirm_btn = widgets.Button(
+            description='Confirm',
+            disabled=True,
+            button_style='', # 'success', 'info', 'warning', 'danger' or ''
+            tooltip='Confirm and Execute Action',
+            icon='' # (FontAwesome names without the `fa-` prefix)
+        )
+        self.cancel_btn = widgets.Button(
+            description='Cancel',
+            disabled=False,
+            button_style='', # 'success', 'info', 'warning', 'danger' or ''
+            tooltip='Cancel Action and Return to Previous View',
+            icon='' # (FontAwesome names without the `fa-` prefix)
+        )
+        self.selectall_cbx = widgets.Checkbox(
+            value=False,
+            description='Select All/None',
+            disabled=False
+        )
+        self.objects_vbox = widgets.VBox(
+            self.objects_cbx_list, 
+            layout=widgets.Layout(height='300px')
+        )
+
+        self.message_label = widgets.Label(
+            value = "Selected Objects:"
+        )
+
+        self.message_textarea = widgets.Textarea (
+            value='',
+            placeholder="Empty!   'Cancel' and select some objects."  ,
+            description='',
+            disabled=False, 
+            layout=widgets.Layout(width="100%", height='250px')   
+        )
+
+        self.status_text = widgets.Textarea(
+            value='',
+            placeholder='',
+            description='',
+            disabled=True ,
+            layout=widgets.Layout(width="100%")
+        )
+
+        self.input_label = widgets.Label(
+            value = "Enter Destination for Selected Objects:"
+        )
+
+        self.input_text = widgets.Text(
+            value='',
+            placeholder='s3://{bucket-name}/{prefix}/',
+            description='',
+            disabled=False ,
+            layout=widgets.Layout(width="100%")
+        )
+
+        self.app_layout = None
+
+        self.run_application()
+
+    def generate_layout(self):
+
+        self.header_pane = widgets.VBox( [
+            widgets.HTML(value=f"<h2>{self.title}</h2>"),  #({self.rules_text.value.count()})</h2>"),
+        ],
+        #layout=widgets.Layout(height='auto')  
+        )
+
+        # list S3 objects and action buttons
+        self.object_pane = widgets.VBox( [
+            widgets.HBox([self.srce_bucket_ddlb]),
+            widgets.HBox([self.srce_folder_ddlb]),
+            widgets.HBox([
+                self.filter_text,
+                self.selectall_cbx,
+            ]),
+            widgets.HBox([
+                self.copy_btn,
+                self.move_btn,
+                self.rename_btn,
+                self.delete_btn,
+            ]),
+            self.objects_vbox ], 
+            #layout=widgets.Layout(height='auto')
+        )
+
+        # show selected objects, confirm/cancel action
+        self.action_pane = widgets.VBox ( [
+            self.message_label,
+            self.message_textarea,
+            self.input_label,
+            self.dest_bucket_ddlb,
+            self.dest_folder_ddlb,
+            self.input_text,
+            widgets.HBox ( [
+                self.confirm_btn,
+                self.cancel_btn
+            ]) ], 
+            #layout=widgets.Layout(height='auto')
+        )
+
+        self.app_layout = widgets.AppLayout(
+            header = self.header_pane,
+            left_sidebar = None,
+            center = self.object_pane, # default
+            right_sidebar = None,
+            footer = self.status_text,
+            pane_heights = ['60px',5,2]
+        )
+
+        return self.app_layout
+
+    def run_application(self):
+        self.setup_event_handlers()
+        display(self.generate_layout())
+        self._refresh_objects_vbox( self.objects_cbx_list )  
+
+    def setup_event_handlers(self):
+        self.srce_bucket_ddlb.observe(self.on_select_srce_bucket, names='value')
+        self.srce_folder_ddlb.observe(self.on_select_srce_folder, names='value')
+        self.dest_bucket_ddlb.observe(self.on_select_dest_bucket, names='value')
+        self.dest_folder_ddlb.observe(self.on_select_dest_folder, names='value')
+        self.filter_text.observe(self.on_change_filter_text, names='value')
+        self.selectall_cbx.observe(self.on_change_selectall, names='value')
+        self.input_text.observe(self.on_change_input_text, names='value')
+        self.copy_btn.on_click(self.on_click_copy_button)
+        self.move_btn.on_click(self.on_click_move_button)
+        self.rename_btn.on_click(self.on_click_rename_button)
+        self.delete_btn.on_click(self.on_click_delete_button)
+        self.confirm_btn.on_click(self.on_click_confirm_button)
+        self.cancel_btn.on_click(self.on_click_cancel_button)
+
+    # Callbacks
+    def on_select_srce_bucket( self, *args):
+        self.files,self.folders = self._list_s3_objects( self.srce_bucket_ddlb.value )
+        self.srce_folder_ddlb.options = self.folders
+        self.objects_cbx_list = self._get_objects_cbx_list(self.files)  
+        #self._refresh_objects_vbox( self.objects_cbx_list )
+
+    def on_select_srce_folder( self, *args):
+        #self.files,self.folders = self._list_s3_objects( self.srce_bucket_ddlb.value )
+        self.objects_cbx_list = self._get_objects_cbx_list(self.files)  
+        self._refresh_objects_vbox( self.objects_cbx_list )
+
+    def on_select_dest_bucket( self, *args):
+        dest_files,self.dest_folders = self._list_s3_objects( self.dest_bucket_ddlb.value )
+        self.dest_folder_ddlb.options = self.dest_folders
+        #self.objects_cbx_list = self._get_objects_cbx_list(self.files)  
+        #self._refresh_objects_vbox( self.objects_cbx_list )
+
+    def on_select_dest_folder( self, *args):
+        self.input_text.value = self.dest_folder_ddlb.value
+        #self.objects_cbx_list = self._get_objects_cbx_list(self.files)  
+        #self._refresh_objects_vbox( self.objects_cbx_list )
+
+    def on_change_filter_text( self, *args):
+        import re
+        pattern=self.filter_text.value
+        reg = re.compile(pattern)
+        self._refresh_objects_vbox( self._get_objects_cbx_list( list(filter(reg.search, self.files)) ))
+
+        self._show_status(f"Filter Text Changed: {pattern}")
+
+    def on_change_input_text( self, *args):
+        self.confirm_btn.disabled = False
+
+    def on_click_confirm_button( self, *args ):
+        self._show_status("CONFIRM Button Clicked!" )
+
+        for srce_objname in self._get_cbx_selected():
+            #bucket_name = srce_objname[:srce_objname.find('/')]
+            #srce_bucket = self.bucket_dict[bucket_name]
+            srce_bucket = self.bucket_dict[self.srce_bucket_ddlb.value]
+
+            srce_s3_client = bat.get_s3_client( 
+                srce_bucket['Profile'], 
+                srce_bucket['Region'], 
+                **srce_bucket
+            )
+            if 'DELETE' in self.input_label.value:
+                bat.delete_s3_object( srce_objname, srce_s3_client)
+                continue
+
+            # else read object into memory for RENAME, COPY, or MOVE ...
+            # bat.get_virt_mem() # ToDo check if big enough
+            fileobj = bat.get_s3_object( srce_objname, srce_s3_client )
+
+            # ... and name the destination
+            if 'NEW NAME' in self.input_label.value:
+                srce_folder  = srce_objname[:srce_objname.rfind('/')+1]
+                dest_objname = srce_folder + self.input_text.value
+                #print (srce_folder, dest_objname)
+            else: # COPY or MOVE
+                dest_folder = self.input_text.value
+                dest_objname = dest_folder + srce_objname.split('/')[-1]
+
+            #bucket_name = dest_objname[:dest_objname.find('/')]
+            #dest_bucket = self.bucket_dict[bucket_name]
+            dest_bucket = self.bucket_dict[self.dest_bucket_ddlb.value]
+
+            dest_s3_client = bat.get_s3_client( 
+                dest_bucket['Profile'], 
+                dest_bucket['Region'], 
+                **dest_bucket
+            )
+            bat.put_s3_object( dest_objname, fileobj, dest_s3_client )
+
+            # delete the source object unless it's a copy
+            if not 'COPY' in self.input_label.value:
+                bat.delete_s3_object( srce_objname, srce_s3_client )
+
+    def on_click_cancel_button( self, *args ):
+        self._show_status("CANCEL Button Clicked!" )
+        self.app_layout.center = self.object_pane
+
+    def on_change_selectall( self, *args):
+        for cbx in self.objects_vbox.children:
+            cbx.value = self.selectall_cbx.value
+        self._get_cbx_selected()
+
+    def on_change_objects( self, *args ):
+        #self._show_status("Checkbox Clicked!")
+        #self._show_status(str(self._get_cbx_selected()))
+        self._get_cbx_selected()
+
+    def on_click_copy_button( self, *args):
+        self.message_label.value = "Selected Objects:"        
+        self.message_textarea.value = "\n".join(self._get_cbx_selected())
+        self.input_label.value = "Enter the COPY Destination for Selected Objects:"
+        self._show_input_text( self.dest_folder_ddlb.value )
+        self._show_dest_ddlb( True ) 
+
+        self.app_layout.center = self.action_pane
+
+    def on_click_move_button( self, *args):
+        self._show_status("MOVE Button Clicked!") 
+        self.message_label.value = "Selected Objects:"        
+        self.message_textarea.value = "\n".join(self._get_cbx_selected())
+        self.input_label.value = "Enter the MOVE Destination for Selected Objects:"
+        self._show_input_text( self.dest_folder_ddlb.value )
+        self._show_dest_ddlb( True ) 
+
+        self.app_layout.center = self.action_pane
+
+    def on_click_rename_button( self, *args):
+        self._show_status("RENAME Button Clicked!" )          
+        self.message_label.value = "Selected Object:"        
+        self.message_textarea.value = "\n".join(self._get_cbx_selected())
+        folder = self.message_textarea.value
+        folder = folder[:folder.rfind('/')+1]
+        self.input_label.value = f"Enter the NEW NAME for the Selected Object in Folder '{folder}':"
+        self._show_input_text( self.message_textarea.value.split('/')[-1] )
+        self._show_dest_ddlb( False ) 
+
+        self.app_layout.center = self.action_pane
+
+    def on_click_delete_button( self, *args):
+        self._show_status("DELETE Button Clicked!")         
+        self.message_label.value = "Selected Objects:"        
+        self.message_textarea.value = "\n".join(self._get_cbx_selected())
+        self.input_label.value = "Do you REALLY want to DELETE the Selected Objects ?"
+        self._show_input_text( '' )
+        self._show_dest_ddlb( False ) 
+
+        self.app_layout.center = self.action_pane
+
+    # Utilities
+    def _show_dest_ddlb( self, show = True ):
+        if show:
+            self.dest_bucket_ddlb.layout.visibility = 'visible'
+            self.dest_folder_ddlb.layout.visibility = 'visible'
+            self.dest_bucket_ddlb.layout.height = '30px' 
+            self.dest_folder_ddlb.layout.height = '30px' 
         else:
-            batch_items.append(item_py)
+            self.dest_bucket_ddlb.layout.visibility = 'hidden' 
+            self.dest_folder_ddlb.layout.visibility = 'hidden'
+            self.dest_bucket_ddlb.layout.height = '0px' 
+            self.dest_folder_ddlb.layout.height = '0px'             
 
-    batch = {
-        "Batch" : batch_record,
-        "BatchObjects" : batch_items
-    }
-    return batch
-
-def put_batch( item, tablename = os.environ['DynDbBatchTable'] ):
-    dynDb_table = dynDb_resource.Table( tablename )
-    
-    expiry = datetime.now() + timedelta(days=32)
-    item['Expiry'] = str(expiry.timestamp())  # ToDo must store as top-level Number
-    
-    resp = dynDb_table.put_item (
-        Item = item )
-    
-    return resp
-
-
-def check_batch_status(batch_id, display=True):
-
-    batch = get_batch( batch_id )
-    batch_rec = batch['Batch']
-
-    status = []
-    batch_rec['Status'] = "PENDING"
-    batch_count=0
-    
-    for item in batch['BatchObjects']:
-        
-        item['Status'] = 'COMPLETED'
-        for subitem in item.keys():
-            if subitem.startswith('Step-'):
-                if item[subitem]['Status'] != 'COMPLETED':
-                    item['Status'] = item[subitem]['Status']
-        com.put_batch(item)
-                    
-        status.append( item['Status'])
-        batch_count += 1
-        
-    file_counts = { 'BATCH' : batch_count }
-    set = {*status}
-    for item in set:
-        file_counts.update( { item : status.count(item) } )
-
-    if 'FAILED' in file_counts.keys() or 'INVALID' in file_counts.keys():
-        batch_status = 'FAILED'
-    elif 'INGESTED' in file_counts.keys():
-        batch_status = 'PARTIAL'
-    elif 'PENDING' in file_counts.keys() or 'RUNNING' in file_counts.keys():
-        batch_status = 'RUNNING'
-    else:
-        batch_status = 'SUCCEEDED'
-
-    batch_rec.update ({
-        'Status' : batch_status,
-        'FileCounts' : json.dumps(file_counts)
-    })
-    com.put_batch(batch_rec)
-
-    return {
-        "BatchId" : batch_id,
-        "Status"  : batch_status,
-        "FileCounts" : json.dumps(file_counts)
-    }
-
-
-
-### ... end DynDB Batch table functions >>>
-
-### <<< Glue Catalog functions ...
-import awswrangler as wr
-
-def set_glue_db_and_table( glue_dbname, glue_table_name, glue_table_path, glue_coltypes, partition_cnt=1 ):
-    # Create Glue Database and/or Table if not found
-    if glue_dbname in wr.catalog.databases().values:
-        print(f"Existing Glue Database: {glue_dbname}")
-    else:
-        wr.catalog.create_database(glue_dbname) #ToDo Description, Location, pkcols, etc
-        print(f"Created Glue Database: {glue_dbname}")
-    
-    glue_tables = wr.catalog.tables(database=glue_dbname, limit=1000)
-    if glue_table_name  in glue_tables['Table'].tolist():
-        print(f"Existing Glue Table: {glue_table_name}" )
-    else:
-        partition_types={}
-        for i in range(partition_cnt):
-            partition_types.update ({ f"partition_{int(i)}" : 'string' })
-            
-        wr.catalog.create_parquet_table(
-            database=glue_dbname,
-            table=glue_table_name,
-            path=glue_table_path,
-            partitions_types=partition_types,
-            compression='snappy',
-            description='Auto-generated by ingest',
-            #parameters={'source': meta_source },
-            #columns_comments={'col0': 'Column 0.', 'col1': 'Column 1.', 'col2': 'Partition.'},
-            columns_types=glue_coltypes
-        )    
-        print(f"Created Glue Table: {glue_table_name}" )
-
-def add_glue_partition( glue_dbname, glue_tablename, s3_outpath, partition ):
-    # Catalog as Glue Partition
-    # if glue table exists : else first create table ...
-    wr.catalog.add_parquet_partitions(
-        database = glue_dbname,
-        table=glue_tablename,
-        partitions_values = { s3_outpath: [ partition ] }
-    )
-    msg = f"Created Glue Partition: '{partition}' in Database.Table: '{glue_dbname}.{glue_tablename}'"
-    print( msg )
-    return msg
-
-
-def set_glue_table_partitions( glue_dbname, glue_tablename, partition_s3url, partition_cnt=1, mode='append', pattern='.' ):
-    '''
-    Mangage Glue Table Partitions based on S3 Folder URL(s)
-        partition_s3url = S3 URL that contains the data set
-        partition_count = number of partition subfolders from end of partition_s3url
-            e.g., 
-            partition_s3url = 's3://wc2h-dtl-prd-datalake/DQRESULT/xstg_afacctbal/D230925.EVALRULES/'
-            partition_count = 2
-            partition_vals  = ['xstg_afacctbal', 'D230925.EVALRULES']
-        mode = [append|replace|refresh]
-            - append  -- add partition_url to existing list of partitions 
-            - replace -- delete existing partitions and replace with partition_url only
-            - refresh -- delete existing partitions and replace with query of S3 subfolders by RegEx pattern
-        pattern = pattern of subfolder names for refresh
-            [Unload|Delta|Delete|Full]
-        
-    '''
-    folder = partition_s3url.replace('s3://','')
-    s = folder[:-1].split('/')
-    table_subfolder = '/'.join(s[1:len(s)-partition_cnt])
-    partitions_values = {
-        partition_s3url : s[-partition_cnt:]
-    }
-    s3_bucket = s[0]
-    #print(s3_bucket,table_subfolder,partitions_values)
-    
-    if mode in ('replace', 'refresh'): # first delete partitions we will replace/refresh
-        ex_partitions = wr.catalog.get_partitions(
-            database = glue_dbname, 
-            table = glue_tablename )
-
-        partitions_2delete = []
-        for k,v in ex_partitions.items():
-            partitions_2delete.append(v)
-
-        wr.catalog.delete_partitions(
-            database = glue_dbname, 
-            table = glue_tablename, 
-            partitions_values = partitions_2delete)
-
-    if mode == 'refresh':  # find folders that comprise the refreshed set of partitions
-        s3_folders = get_namelist_by_S3pattern( 
-            s3_bucket, 
-            pattern,              # e.g., 'Unload|Delta', 'Unload.D230531', 'Delta.D2306', etc. (default '.'=all)
-            Folder = table_subfolder )
-
-        partitions_values = {}
-        for folder in s3_folders:
-            s = folder[:-1].split('/')
-            partitions_values[f"s3://{folder}"] = s[-partition_cnt:]
-
-    # add the new set of partitions
-    print(partitions_values)
-    
-    wr.catalog.add_parquet_partitions(
-        database = glue_dbname, 
-        table = glue_tablename, 
-        partitions_values=partitions_values)
-    
-    msg = f'Set Partitions for {glue_dbname}.{glue_tablename}, {mode}:\n{partitions_values}'
-    print( msg )
-    return msg
-
-'''
-e.g.,
-for glue_tablename in tablenames['Table'].to_list():
-    partition_s3url = f's3://{parms["S3Datalake"]["Bucket"]}/{parms["S3Datalake"]["Output"]}/{glue_tablename}'
-    if glue_tablename.startswith('xstg'):
-        set_glue_table_partitions( parms["GlueDatabaseName"], glue_tablename, partition_s3url, mode='refresh', pattern='.' )
-    #break
-
-'''
-    
-### ... end Glue Catalog functions >>>
-
-### <<< Redshift functions ...
-def get_redshift_table_metadata( table_name, schemaname = 'dw', glue_redshift_connector = 'dtl-prd-redshift-fsdatalake' ):
-    sql = f"""
-    select trim(ddl) from admin.v_generate_tbl_ddl 
-     where tablename = '{table_name.lower()}'
-       and schemaname = '{schemaname}'
-       and seq between 100000000 and 299999998;"""
-    
-    con = wr.redshift.connect( glue_redshift_connector )
-    
-    df_rsmeta = wr.redshift.read_sql_query(
-        sql=sql,
-        con=con
-    )
-    rs_ddl = {}
-    pkcols = None
-
-    for ddl in list(df_rsmeta['btrim']):
-        ddl = ddl.replace('\t,','').replace('"','')   #.replace(',','')
-        if 'PRIMARY KEY' in ddl:
-            pkcols = ddl[ddl.find('(')+1:-1].replace(' ','').split(',')
+    def _show_srce_ddlb( self, show = True ):
+        if show:
+            self.srce_bucket_ddlb.layout.visibility = 'visible'
+            self.srce_folder_ddlb.layout.visibility = 'visible'
+            self.filter_text.visibility = 'visible'
+            self.srce_folder_ddlb.layout.height = '30px' 
+            self.srce_folder_ddlb.layout.height = '30px' 
+            self.filter_text.layout.height = '30px' 
         else:
-            rs_ddl[ ddl.split()[0] ] = ddl.split()[1]
-            
-    return rs_ddl, pkcols
+            self.srce_bucket_ddlb.layout.visibility = 'hidden' 
+            self.srce_folder_ddlb.layout.visibility = 'hidden'
+            self.filter_text.layout.visibility = 'hidden'
+            self.srce_bucket_ddlb.layout.height = '0px' 
+            self.srce_folder_ddlb.layout.height = '0px'             
+            self.filter_text.layout.height = '0px' 
 
-
-def redshift_type_convert( ddl_type ):
-    # 
-    ddl_type = ddl_type.lower()
-    spark_type = ''
-    glue_type = ''
-    
-    if ddl_type in ('bigint', 'int', 'integer', 'smallint', 'date', 'timestamp','string'): # boolean
-        glue_type = ddl_type
-        spark_type = ddl_type
-    if ddl_type == 'bigint':
-        spark_type = 'long'
-    if ddl_type == 'integer': 
-        glue_type = 'int'
-        spark_type = 'int'
-    if ddl_type == 'smallint': # INT2, 2-byte signed
-        spark_type = 'short'
-    #if ddl_type == 'timestamp': 
-    #    spark_type = 'datetime64[ns]'
-    if ddl_type.startswith('double'):
-            spark_type = 'double'
-            glue_type  = 'double'
-    if ddl_type.startswith('numeric') or ddl_type.startswith('decimal'):
-        if ddl_type.endswith(',0)'):
-            spark_type = 'long'
-            glue_type  = 'bigint'
+    def _show_input_text( self, input_default):
+        self.input_text.value = input_default
+        if input_default:
+            self.input_text.value = input_default
+            self.input_text.layout.visibility = 'visible' 
+            self.input_text.layout.height = '30px' 
         else:
-            #spark_type = 'double'
-            #glue_type  = 'double'
-            spark_type  = ddl_type.replace('numeric','decimal')
-            glue_type  = ddl_type.replace('numeric','decimal')
-    if 'char' in ddl_type: # char(n), varchar(n):
-        spark_type = 'string'
-        glue_type  = 'string'
-    if not spark_type:
-        print(f"Warning -- Unsupported Redshift type: {ddl_type}, default to 'string'")
-        spark_type = 'string'
-        glue_type  = 'string'
-        
-    return spark_type, glue_type
+            self.input_text.layout.visibility = 'hidden' 
+            self.input_text.layout.height = '0px' 
 
-### ... end Redshift functions >>>
+    def _show_status(self, status_text):
+        self.status_text.value = status_text
+        print(status_text)
 
-### <<< S3 Functions ...
-def get_namelist_by_S3pattern( s3_bucket, pattern, **kwargs):
+    def _get_objects_cbx_list( self, files ):
+        cbx_files = []
 
-    """
-    Loop thru all_objects and return a namelist (list of strings) matching the RegEx pattern
+        for file in files:
+            if file.endswith('/'):
+                continue
 
-    Parameters
-    ----------
-    pattern : str
-        RegEx pattern by which to filter S3 Object names.
-
-    ExpandFolders : True | False (default)
-        When True, namelist returns all files including 'partial' ones created by Redshift UNLOAD, EMR, and DUDE Split_S3_Object
-        When False, namelist returns 'prefix' up to the last '/'
-
-    PrintList : True | False (default)
-        When True, 'pretty print' list of S3 objects with human-formatted object size and last mod date.
-        NOTE: Prints ALL matching objects, even when ExpandFolders=False to return folders only.
-    """
-    import re
-    import boto3
-    
-    pattern = re.compile( pattern )
-    namelist = list()
-    expand_folders = False
-    print_list = False
-    format_str = "{:<70}\t{:<12}\t{}"
-    s3_client = boto3.client('s3')
-
-    for k,v in kwargs.items():
-        if k=='ExpandFolders':
-            expand_folders = v
-        elif k=='PrintList':
-            print_list = v
-        elif k=="Folder":
-            folder = v
-        elif k=="S3Client": # override
-            s3_client = v
-
-    response = s3_client.list_objects_v2(
-        Bucket = s3_bucket,
-        Prefix = folder
-    )
-    objects = response['Contents']
-    #return response
-
-    while 'NextContinuationToken' in response:
-        response = s3_client.list_objects_v2(
-            Bucket = s3_bucket,
-            Prefix = folder,
-            ContinuationToken=response['NextContinuationToken']
-        )
-        objects.extend(response['Contents'])
-
-    for object in objects:
-        object_key = object['Key']
-        if pattern.search( object['Key'] ):
-            if not expand_folders:
-                suffix = object_key[object_key.rfind('/'):]
-                object_key = object_key[:object_key.rfind('/')+1] # ... truncate to folder name only
+            if self.srce_folder_ddlb.value not in file:
+                continue
             
-            namelist.append( s3_bucket + '/' + object_key )
- 
-    nameset = {*namelist}  # convert to unique set of object and/or folder names
-    namelist = [*nameset]
-    namelist.sort()
+            #else:
+            cbx = widgets.Checkbox(
+                value = False,
+                description = file,
+                disabled = False,
+                indent = False,
+                layout=widgets.Layout(width="100%", height='12px')
+            )
+            cbx_files.append ( cbx )
 
-    return namelist
+        #return widgets.VBox(cbx_files, layout=widgets.Layout(height='200px'))
+        #self.objects_vbox.layout.height= f"{len(self.objects_cbx_list)*20}px"
+        return cbx_files
 
-def get_s3_client( profile_name='default', region_name='us_gov_west_1', **kwargs ):
+    def _list_s3_objects( self, bucket_name, pattern = '.' ):
+        bucket = self.bucket_dict[bucket_name]
 
-    print(kwargs)
-
-    session = boto3.Session(profile_name=profile_name, region_name=region_name)
-
-    s3_client = session.client('s3')
-
-    if "CrossAccountRoleArn" in kwargs.keys():
-        # create a Security Token Service client
-        # ref: https://docs.aws.amazon.com/STS/latest/APIReference/welcome.html
-        sts_client=session.client('sts')
-
-        # Call the assume_role method of the STSConnection object,
-        # passing the Role ARN and a session name
-        assumed_role_object = sts_client.assume_role(
-            RoleArn = kwargs['CrossAccountRoleArn'],
-            RoleSessionName = "CrossAccountRole"
+        s3_client = bat.get_s3_client( 
+            bucket['Profile'], 
+            bucket['Region'], 
+            **bucket
         )
-        # From the response that contains the assumed role, get the temporary 
-        # credentials that can be used to make subsequent API calls
-        credentials = assumed_role_object['Credentials']
-        #print(json.dumps(credentials, default=str))
+        files = bat.get_namelist_by_S3pattern( 
+            s3_bucket = bucket['BucketName'], 
+            pattern = pattern, 
+            Folder = bucket['Folders'][0],
+            ExpandFolders = True,
+            S3Client = s3_client )
+        
+        folders = bat.get_namelist_by_S3pattern( 
+            s3_bucket = bucket['BucketName'], 
+            pattern = pattern, 
+            Folder = bucket['Folders'][0],
+            S3Client = s3_client )
+        
+        return files,folders
 
-        s3_client = session.client(
-            's3',
-            aws_access_key_id=credentials['AccessKeyId'],
-            aws_secret_access_key=credentials['SecretAccessKey'],
-            aws_session_token=credentials['SessionToken'],
-        )
-        print(f"Assumed Role for S3 Client: {kwargs['CrossAccountRoleArn']}")
+    def _refresh_objects_vbox( self, objects_cbx_list  ):
+        self.objects_vbox.children = objects_cbx_list
+        #self.objects_vbox.layout.height= f"{(len(objects_cbx_list)+1)*20}px"
+        for cbx in self.objects_vbox.children:
+            cbx.observe(self.on_change_objects)
 
-    elif "SsmParmNameArn" in kwargs.keys(): # ToDo
-        print( "Get Credentials from Simple System Manager (SSM) not implemented -- using default session")
+    def _get_cbx_selected( self ):
+        cbx_selected = []
+        for cbx in self.objects_vbox.children:
+            if cbx.value:
+                cbx_selected.append( cbx.description )
 
-    elif "SecretsMgrArn" in kwargs.keys(): # ToDo
-        print( "Get Credentials from Secrets Manager not implemented -- using default session")
+        if len(cbx_selected) == 0:
+            self.copy_btn.disabled = True
+            self.move_btn.disabled = True
+            self.rename_btn.disabled = True
+            self.delete_btn.disabled = True
 
-    return s3_client
+        if len(cbx_selected) == 1:
+            self.copy_btn.disabled = False
+            self.move_btn.disabled = False
+            self.rename_btn.disabled = False
+            self.delete_btn.disabled = False
 
-def get_s3_object( objname, s3_client=boto3.client('s3')):
-    print(f"GET S3 Object {objname}")
+        if len(cbx_selected) > 1:
+            self.rename_btn.disabled = True
 
-    import io
-    bytes_buffer = io.BytesIO()
-
-    objname = objname.replace('s3://','')
-    bucket_name = objname[:objname.find('/')]
-    object_key  = objname[objname.find('/')+1:]
-
-    s3_client.download_fileobj(Bucket=bucket_name, Key=object_key, Fileobj=bytes_buffer)
-    byte_value = bytes_buffer.getvalue()
-    str_value = byte_value.decode() #python3, default decoding is utf-8
-
-    return bytes_buffer
-
-def put_s3_object( objname, fileobj, s3_client=boto3.client('s3') ):
-    print(f"PUT S3 Object {objname}") 
-
-    objname = objname.replace('s3://','')
-    bucket_name = objname[:objname.find('/')]
-    object_key  = objname[objname.find('/')+1:]
-
-    return s3_client.upload_fileobj(fileobj, bucket_name, object_key )
-
-def delete_s3_object( objname, s3_client=boto3.client('s3')):
-    print(f"DELETE S3 Object {objname}") 
-
-    objname = objname.replace('s3://','')
-    bucket_name = objname[:objname.find('/')]
-    object_key  = objname[objname.find('/')+1:]
-
-    return s3_client.delete_object(Bucket = bucket_name, Key = object_key )
-
-
-def get_virt_mem():
-    import psutil
-    size = psutil.virtual_memory().available
-
-    power = 2**10
-    n = 0
-    power_labels = {0 : '', 1: 'KB', 2: 'MB', 3: 'GB', 4: 'TB'}
-    while size > power:
-        size /= power
-        n += 1
-
-    return 'Virtual Memory Available {0:.3g} '.format(size) + power_labels[n]
-
-
-
+        return cbx_selected
 
