@@ -1,4 +1,4 @@
-# SIMPLE S3 Browser
+# SIMPLE S3 Browser for Jupyter
 The standard Amazon S3 Console is oriented toward viewing and managing all buckets within a particular IAM Sign-in account.  Granting users S3 Console access in multiple accounts is cumbersome, and fraught with security concerns, when all that users really need is access to a set of particular subfolders within particular buckets.  This project provides a basic GUI that enables the user to view and manage S3 Objects among multiple buckets which can reside different accounts.
 
 - [s3_browser.ipynb](./s3_browser.ipynb) -- Jupyter Notebook to configure buckets and invoke the GUI application
@@ -40,6 +40,9 @@ The standard Amazon S3 Console is oriented toward viewing and managing all bucke
 
     ![Alt text](SimpleS3.20231130-081150.png))
 
-## Note
-- SIMPLE S3 Browser is intended to support Dev and Test operations involving a limited set of files.  (i.e., dozens, maybe hundreds, not thousands).   If you find the GUI bogging down retreiving big object lists, specify a more limited subfolder in your Bucket Dictionary.  Or, you can script your lotsa files use case with the provided [python/batch_simple_2311.py](./python/batch_simple_2311.py) module.
+## Notes
+- **SIMPLE S3 Browser for Jupyter** is intended to support Dev and Test operations involving a limited set of files.  (i.e., dozens, maybe hundreds, not thousands).   If you find the GUI bogging down retreiving big object lists, specify a more limited subfolder in your Bucket Dictionary.  Or, you can script your lotsa files use case with the provided [python/batch_simple_2311.py](./python/batch_simple_2311.py) module.
 
+- This project is not affiliated with [S3 Browser - Amazon S3 Client for Windows](https://s3browser.com/).  S3 Browser is a freeware Windows client that has many good features, but authentication is based on IAM User accounts, with authorization via S3 ACLs and Bucket Policies.  Our goal to to instead utilize an 'Assume Role' approach to sharing resources. 
+
+- See [AWS Cross-Account Resource Sharing](https://github.com/froghollow/aws-cross-account-sharing) for further details on how to configure IAM Roles and Policies in order to make a Shared Account's resources accessible to a Trusted Account.
