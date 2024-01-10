@@ -1,5 +1,5 @@
 import ipywidgets as widgets
-import batch_simple_2311 as bat
+import batch_simple_2401 as bat
 
 class S3_Browser:
 
@@ -74,6 +74,14 @@ class S3_Browser:
             tooltip='Move Selected Objects to Specified Folder',
             icon='arrow-right' # (FontAwesome names without the `fa-` prefix)
         )
+        self.refresh_btn = widgets.Button(
+            description='',
+            disabled=False,
+            button_style='', # 'success', 'info', 'warning', 'danger' or ''
+            tooltip='Refresh Source Bucket Objects',
+            icon='refresh', # (FontAwesome names without the `fa-` prefix)
+            layout=widgets.Layout(width='30px')
+        )
         self.rename_btn = widgets.Button(
             description='Rename',
             disabled=True,
@@ -96,10 +104,10 @@ class S3_Browser:
             icon='' # (FontAwesome names without the `fa-` prefix)
         )
         self.cancel_btn = widgets.Button(
-            description='Cancel',
+            description='Return',
             disabled=False,
             button_style='', # 'success', 'info', 'warning', 'danger' or ''
-            tooltip='Cancel Action and Return to Previous View',
+            tooltip='Take No Action and Return to Previous View',
             icon='' # (FontAwesome names without the `fa-` prefix)
         )
         self.selectall_cbx = widgets.Checkbox(
@@ -158,7 +166,7 @@ class S3_Browser:
 
         # list S3 objects and action buttons
         self.object_pane = widgets.VBox( [
-            widgets.HBox([self.srce_bucket_ddlb]),
+            widgets.HBox([self.srce_bucket_ddlb, self.refresh_btn]),
             widgets.HBox([self.srce_folder_ddlb]),
             widgets.HBox([
                 self.filter_text,
@@ -219,13 +227,16 @@ class S3_Browser:
         self.delete_btn.on_click(self.on_click_delete_button)
         self.confirm_btn.on_click(self.on_click_confirm_button)
         self.cancel_btn.on_click(self.on_click_cancel_button)
+        self.refresh_btn.on_click(self.on_select_srce_bucket)
 
     # Callbacks
     def on_select_srce_bucket( self, *args):
+        self._show_status(f"Getting List of Objects for Source Bucket {self.srce_bucket_ddlb.value} ... ", True )
         self.files,self.folders = self._list_s3_objects( self.srce_bucket_ddlb.value )
         self.srce_folder_ddlb.options = self.folders
         self.objects_cbx_list = self._get_objects_cbx_list(self.files)  
         #self._refresh_objects_vbox( self.objects_cbx_list )
+        self._show_status(f"Ready!\n")
 
     def on_select_srce_folder( self, *args):
         #self.files,self.folders = self._list_s3_objects( self.srce_bucket_ddlb.value )
@@ -233,10 +244,12 @@ class S3_Browser:
         self._refresh_objects_vbox( self.objects_cbx_list )
 
     def on_select_dest_bucket( self, *args):
+        self._show_status(f"Getting List of Objects for Destination Bucket {self.dest_bucket_ddlb.value} ... ", True )
         dest_files,self.dest_folders = self._list_s3_objects( self.dest_bucket_ddlb.value )
         self.dest_folder_ddlb.options = self.dest_folders
         #self.objects_cbx_list = self._get_objects_cbx_list(self.files)  
         #self._refresh_objects_vbox( self.objects_cbx_list )
+        self._show_status(f"Ready!\n")
 
     def on_select_dest_folder( self, *args):
         self.input_text.value = self.dest_folder_ddlb.value
@@ -249,13 +262,13 @@ class S3_Browser:
         reg = re.compile(pattern)
         self._refresh_objects_vbox( self._get_objects_cbx_list( list(filter(reg.search, self.files)) ))
 
-        self._show_status(f"Filter Text Changed: {pattern}")
+        self._show_status(f"Filter Text Changed: {pattern}\n")
 
     def on_change_input_text( self, *args):
         self.confirm_btn.disabled = False
 
     def on_click_confirm_button( self, *args ):
-        self._show_status("CONFIRM Button Clicked!" )
+        self._show_status("CONFIRM Button Clicked!\n", True )
 
         for srce_objname in self._get_cbx_selected():
             #bucket_name = srce_objname[:srce_objname.find('/')]
@@ -268,12 +281,15 @@ class S3_Browser:
                 **srce_bucket
             )
             if 'DELETE' in self.input_label.value:
+                self._show_status( f"DELETE S3 Object {srce_objname} \n")
                 bat.delete_s3_object( srce_objname, srce_s3_client)
                 continue
 
             # else read object into memory for RENAME, COPY, or MOVE ...
             # bat.get_virt_mem() # ToDo check if big enough
+            self._show_status( f"Getting S3 Object {srce_objname} ... ")
             fileobj = bat.get_s3_object( srce_objname, srce_s3_client )
+            self._show_status( f"Done.\n")
 
             # ... and name the destination
             if 'NEW NAME' in self.input_label.value:
@@ -293,15 +309,21 @@ class S3_Browser:
                 dest_bucket['Region'], 
                 **dest_bucket
             )
+            self._show_status( f"Putting S3 Object {dest_objname} ... ")
             bat.put_s3_object( dest_objname, fileobj, dest_s3_client )
+            self._show_status( f"Done.\n")
 
             # delete the source object unless it's a copy
             if not 'COPY' in self.input_label.value:
+                self._show_status( f"DELETE S3 Object {srce_objname} \n")
                 bat.delete_s3_object( srce_objname, srce_s3_client )
 
+        self._show_status( f"ALL DONE!  Click RETURN for Next Selection.\n")
+
     def on_click_cancel_button( self, *args ):
-        self._show_status("CANCEL Button Clicked!" )
+        self._show_status("RETURN Button Clicked!\n", True)
         self.app_layout.center = self.object_pane
+        self._show_status("Select Source Bucket/Folder/Objects.\n", True)
 
     def on_change_selectall( self, *args):
         for cbx in self.objects_vbox.children:
@@ -333,7 +355,7 @@ class S3_Browser:
         self.app_layout.center = self.action_pane
 
     def on_click_rename_button( self, *args):
-        self._show_status("RENAME Button Clicked!" )          
+        self._show_status("RENAME Button Clicked!\n" )          
         self.message_label.value = "Selected Object:"        
         self.message_textarea.value = "\n".join(self._get_cbx_selected())
         folder = self.message_textarea.value
@@ -393,8 +415,10 @@ class S3_Browser:
             self.input_text.layout.visibility = 'hidden' 
             self.input_text.layout.height = '0px' 
 
-    def _show_status(self, status_text):
-        self.status_text.value = status_text
+    def _show_status(self, status_text, reset=False):
+        if reset:
+            self.status_text.value = ''    
+        self.status_text.value += status_text
         print(status_text)
 
     def _get_objects_cbx_list( self, files ):
