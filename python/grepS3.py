@@ -187,7 +187,7 @@ else:
     print( "NOTE: Environment Variable 'GREPS3_BUCKET' not found.   s3_folder args must use URI format 's3://{bucket}/{folder}'")
 
 if 'GREPS3_ROLEARN' in os.environ.keys():
-    s3_client = get_s3_client( {"CrossAccountRoleArn" : os.environ['GREPS3_ROLEARN']} )
+    s3_client = get_s3_client( "default", "us-gov-west-1", **{"CrossAccountRoleArn" : os.environ['GREPS3_ROLEARN']} ) 
 else:
     print( "NOTE: Environment Variable 'GREPS3_ROLEARN' not found.   S3 Client will default to EC2 Service Role permissions." )
     s3_client = get_s3_client()
