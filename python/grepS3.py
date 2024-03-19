@@ -143,11 +143,11 @@ def grepS3( s3_bucket, search_term, pattern, Folder, S3Client ):
 
     for objname in get_namelist_by_S3pattern( s3_bucket, pattern, Folder=folder, S3Client=s3_client ):
         print (f"{op} 's3://{objname}' ...")
-        response = s3_client.get_object(
-            Bucket = s3_bucket,
-            Key = objname[objname.find('/')+1:]
-        )
         if op == 'Searching':
+            response = s3_client.get_object(
+                Bucket = s3_bucket,
+                Key = objname[objname.find('/')+1:]
+            )
             body = response['Body'].read().decode()
 
             for n, line in enumerate(body.split('\n')):
